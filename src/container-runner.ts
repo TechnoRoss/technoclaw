@@ -62,27 +62,34 @@ function buildVolumeMounts(
   isMain: boolean,
 ): VolumeMount[] {
   const mounts: VolumeMount[] = [];
-  const homeDir = getHomeDir();
   const projectRoot = process.cwd();
+
+  // When running inside Docker (e.g. the matrix stack), NANOCLAW_HOST_PATH must
+  // point to the nanoclaw directory on the HOST so that sibling agent containers
+  // can bind-mount the same paths (Docker resolves mounts against the host FS,
+  // not the orchestrator container's FS).
+  const hostRoot = process.env.NANOCLAW_HOST_PATH || projectRoot;
+  const hostGroupsDir = path.join(hostRoot, 'groups');
+  const hostDataDir = path.join(hostRoot, 'data');
 
   if (isMain) {
     // Main gets the entire project root mounted
     mounts.push({
-      hostPath: projectRoot,
+      hostPath: hostRoot,
       containerPath: '/workspace/project',
       readonly: false,
     });
 
     // Main also gets its group folder as the working directory
     mounts.push({
-      hostPath: path.join(GROUPS_DIR, group.folder),
+      hostPath: path.join(hostGroupsDir, group.folder),
       containerPath: '/workspace/group',
       readonly: false,
     });
   } else {
     // Other groups only get their own folder
     mounts.push({
-      hostPath: path.join(GROUPS_DIR, group.folder),
+      hostPath: path.join(hostGroupsDir, group.folder),
       containerPath: '/workspace/group',
       readonly: false,
     });
@@ -91,7 +98,7 @@ function buildVolumeMounts(
     const globalDir = path.join(GROUPS_DIR, 'global');
     if (fs.existsSync(globalDir)) {
       mounts.push({
-        hostPath: globalDir,
+        hostPath: path.join(hostGroupsDir, 'global'),
         containerPath: '/workspace/global',
         readonly: true,
       });
@@ -125,7 +132,7 @@ function buildVolumeMounts(
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
-  const skillsSrc = path.join(process.cwd(), 'container', 'skills');
+  const skillsSrc = path.join(projectRoot, 'container', 'skills');
   const skillsDst = path.join(groupSessionsDir, 'skills');
   if (fs.existsSync(skillsSrc)) {
     for (const skillDir of fs.readdirSync(skillsSrc)) {
@@ -140,8 +147,9 @@ function buildVolumeMounts(
       }
     }
   }
+  const hostGroupSessionsDir = path.join(hostDataDir, 'sessions', group.folder, '.claude');
   mounts.push({
-    hostPath: groupSessionsDir,
+    hostPath: hostGroupSessionsDir,
     containerPath: '/home/node/.claude',
     readonly: false,
   });
@@ -153,13 +161,13 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
   mounts.push({
-    hostPath: groupIpcDir,
+    hostPath: path.join(hostDataDir, 'ipc', group.folder),
     containerPath: '/workspace/ipc',
     readonly: false,
   });
 
   // Mount agent-runner source from host — recompiled on container startup.
-  const agentRunnerSrc = path.join(projectRoot, 'container', 'agent-runner', 'src');
+  const agentRunnerSrc = path.join(hostRoot, 'container', 'agent-runner', 'src');
   mounts.push({
     hostPath: agentRunnerSrc,
     containerPath: '/app/src',
