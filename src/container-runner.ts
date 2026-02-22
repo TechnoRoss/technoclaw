@@ -188,11 +188,20 @@ function buildVolumeMounts(
 }
 
 /**
- * Read allowed secrets from .env for passing to the container via stdin.
+ * Read allowed secrets for passing to the container via stdin.
+ * Prefers .env file values; falls back to process.env (for Docker deployments
+ * where secrets come in as environment variables rather than a .env file).
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']);
+  const keys = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'];
+  const fromFile = readEnvFile(keys);
+  const result: Record<string, string> = {};
+  for (const key of keys) {
+    const value = fromFile[key] || process.env[key];
+    if (value) result[key] = value;
+  }
+  return result;
 }
 
 function buildContainerArgs(mounts: VolumeMount[], containerName: string): string[] {
